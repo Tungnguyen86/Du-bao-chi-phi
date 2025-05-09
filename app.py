@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,7 +8,6 @@ from sklearn.linear_model import LinearRegression
 st.set_page_config(page_title="Dự báo chi phí khám chữa bệnh", layout="centered")
 st.title("📈 Dự báo Chi phí Khám chữa bệnh theo nhóm")
 
-# === 1. Upload file Excel ===
 uploaded_file = st.file_uploader("📤 Tải lên file Excel (.xlsx)", type="xlsx")
 
 if uploaded_file:
@@ -16,7 +16,6 @@ if uploaded_file:
     except:
         st.error("❌ Không tìm thấy sheet 'ChiPhi'. Vui lòng kiểm tra lại file.")
     else:
-        # === 2. Chuẩn bị dữ liệu ===
         df['ThoiGian'] = df['Năm'].astype(str) + ' Q' + df['Quý'].astype(str).str.extract('(\d+)')[0]
         df['Index'] = range(1, len(df) + 1)
 
@@ -25,8 +24,6 @@ if uploaded_file:
         chon_nhom = st.selectbox("🔍 Chọn nhóm chi phí cần dự báo:", nhoms)
 
         df_nhom = df[df['Nhóm chi phí'] == chon_nhom].copy()
-
-        # === 3. Huấn luyện mô hình Linear Regression ===
         X = df_nhom[['Index']]
         y_bhyt = df_nhom['BHYT_TT']
         y_chiphi = df_nhom['Chi phí bình quân']
@@ -35,77 +32,55 @@ if uploaded_file:
         model_chiphi = LinearRegression().fit(X, y_chiphi)
 
         next_index = X.iloc[-1, 0] + 1
-        du_doan_bhyt = model_bhyt.predict(pd.DataFrame({'Index': [next_index]}))[0]
-        du_doan_chiphi = model_chiphi.predict(pd.DataFrame({'Index': [next_index]}))[0]
+        indices = [next_index, next_index + 1, next_index + 2]
+        du_bao_bhyt = model_bhyt.predict(pd.DataFrame({'Index': indices}))
+        du_bao_chiphi = model_chiphi.predict(pd.DataFrame({'Index': indices}))
 
-        # === 4. Hiển thị kết quả ===
-        st.subheader(f"📊 Dự báo quý tiếp theo ({chon_nhom})")
-        st.markdown(f"""
-        - **➡️ BHYT_TT:** `{round(du_doan_bhyt):,}` VND  
-        - **➡️ Chi phí bình quân:** `{round(du_doan_chiphi):,}` VND  
-        """)
+        quy_du_bao = ['Q2', 'Q3', 'Q4']
+        nam_du_bao = df_nhom['Năm'].max()
+        quy_hien_tai = int(df_nhom['Quý'].iloc[-1][-1])
+        quy_du_bao_chinh_xac = [(quy_hien_tai + i) % 4 or 4 for i in range(1, 4)]
+        nam_du_bao_dieu_chinh = [nam_du_bao + ((quy_hien_tai + i - 1) // 4) for i in range(1, 4)]
+        quy_labels = [f"Q{q}" for q in quy_du_bao_chinh_xac]
 
-        # === 5. Vẽ biểu đồ xu hướng + hiển thị nhãn số ===
-        x_labels = df_nhom['ThoiGian'].tolist() + ['Dự báo']
-        y_bhyt_all = y_bhyt.tolist() + [du_doan_bhyt]
-        y_chiphi_all = y_chiphi.tolist() + [du_doan_chiphi]
+        df_du_bao_multi = pd.DataFrame({
+            'Năm': nam_du_bao_dieu_chinh,
+            'Quý': quy_labels,
+            'Nhóm chi phí': [chon_nhom] * 3,
+            'BHYT_TT': [round(v) for v in du_bao_bhyt],
+            'Chi phí bình quân': [round(v) for v in du_bao_chiphi],
+            'ThoiGian': [f"Dự báo {q}" for q in quy_labels],
+            'Index': indices
+        })
+
+        df_hien_thi = pd.concat([df_nhom, df_du_bao_multi], ignore_index=True)
+        st.subheader(f"📊 Dự báo 3 quý tiếp theo ({chon_nhom})")
+        for i in range(3):
+            st.markdown(f"- **➡️ {df_du_bao_multi['ThoiGian'][i]}**: BHYT_TT = `{df_du_bao_multi['BHYT_TT'][i]:,}` VND, Chi phí bình quân = `{df_du_bao_multi['Chi phí bình quân'][i]:,}` VND")
+
+        x_labels = df_hien_thi['ThoiGian'].tolist()
+        y_bhyt_all = df_hien_thi['BHYT_TT'].tolist()
+        y_chiphi_all = df_hien_thi['Chi phí bình quân'].tolist()
 
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(x_labels, y_bhyt_all, marker='o', label='BHYT_TT')
         ax.plot(x_labels, y_chiphi_all, marker='x', label='Chi phí bình quân')
 
-        # Thêm số lên điểm dự báo
-        ax.annotate(f"{du_doan_bhyt/1e6:.1f}M",
-                    xy=(len(x_labels)-1, du_doan_bhyt),
-                    xytext=(0, 10),
-                    textcoords='offset points',
-                    ha='center',
-                    fontsize=9,
-                    color='red')
-
-        ax.annotate(f"{du_doan_chiphi:,.0f}",
-                    xy=(len(x_labels)-1, du_doan_chiphi),
-                    xytext=(0, -15),
-                    textcoords='offset points',
-                    ha='center',
-                    fontsize=9,
-                    color='blue')
+        for i in range(3):
+            ax.annotate(f"{du_bao_bhyt[i]/1e6:.1f}M", xy=(len(x_labels)-3+i, du_bao_bhyt[i]), xytext=(0, 10), textcoords='offset points', ha='center', fontsize=9, color='red')
+            ax.annotate(f"{du_bao_chiphi[i]:,.0f}", xy=(len(x_labels)-3+i, du_bao_chiphi[i]), xytext=(0, -15), textcoords='offset points', ha='center', fontsize=9, color='blue')
 
         ax.set_title(f'Dự báo chi phí theo thời gian - Nhóm: {chon_nhom}')
         ax.set_xlabel('Thời điểm (Quý/Năm)')
         ax.set_ylabel('Giá trị (Triệu VND)')
         ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x/1e6)}M'))
-
         ax.set_xticks(range(len(x_labels)))
         ax.set_xticklabels(x_labels, rotation=45)
         ax.legend()
         ax.grid(True)
         st.pyplot(fig)
 
-        # === 6. Thêm dòng dữ liệu dự báo vào bảng ===
-        du_bao_nam = df_nhom['Năm'].max()
-        du_bao_quy_cu = int(df_nhom['Quý'].iloc[-1][-1])
-        if du_bao_quy_cu == 4:
-            du_bao_nam += 1
-            du_bao_quy = 'Q1'
-        else:
-            du_bao_quy = f"Q{du_bao_quy_cu + 1}"
-
-        df_du_bao = pd.DataFrame({
-            'Năm': [du_bao_nam],
-            'Quý': [du_bao_quy],
-            'Nhóm chi phí': [chon_nhom],
-            'BHYT_TT': [round(du_doan_bhyt)],
-            'Chi phí bình quân': [round(du_doan_chiphi)],
-            'ThoiGian': ['Dự báo'],
-            'Index': [next_index]
-        })
-
-        df_hien_thi = pd.concat([df_nhom, df_du_bao], ignore_index=True)
-
-        # === 7. Hiển thị bảng dữ liệu (có dòng dự báo) ===
         with st.expander("📂 Xem dữ liệu gốc + dự báo"):
             st.dataframe(df_hien_thi)
-
 else:
     st.info("⬆️ Hãy tải lên file Excel có sheet tên 'ChiPhi'. File cần có các cột: Năm, Quý, Nhóm chi phí, BHYT_TT, Chi phí bình quân.")
